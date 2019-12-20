@@ -24,5 +24,3 @@ def _get_train_opt():
     parser.add_argument('--save_itr',type=int,default=1, help="iteration number after which to save")
     return parser.parse_args()
 
-
-    save_itr
