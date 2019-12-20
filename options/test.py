@@ -2,7 +2,7 @@ import argparse
 
 def _get_test_opt():
     parser = argparse.ArgumentParser(description = 'Structure-Aware Residual Pyramid Network for Monocular Depth Estimation(SARPN)')
-    
+
     parser.add_argument('--gpu_ids', type=int, default=0, help='gpu id to use')
     parser.add_argument('--save_dir_model', type=str, default='/results/model_test', help='dir to save model')
     parser.add_argument('--save_dir_res', type=str, default='/results/result_test', help='dir to save result train')
@@ -12,6 +12,10 @@ def _get_test_opt():
 
     parser.add_argument('--testlist_path',type=str,default='/data/data/nyu2_test.csv', help='the path of trainlist')
     parser.add_argument('--model_path',type=str,default='/results/model_train/', help='the path of trainlist')
+    parser.add_argument('--lr', default=0.0001, type=float, help='initial learning rate')
+    parser.add_argument('--resume', action='store_true',default=False, help='continue training the model')
+
+    parser.add_argument('--optimizer', default="adam", type=str, help="Optimizer selection")
 
     parser.add_argument('--batch_size', type=int, default=1, help='testing batch size')
 
