@@ -32,9 +32,9 @@ class BaseModel(nn.Module):
     	pass
 
 
-    def test(self):
-    	with torch.no_grad():
-    	  self.forward()
+    def evaluate(self):
+        pass
+
 
     def get_lr(self):
         pass
@@ -74,7 +74,7 @@ class BaseModel(nn.Module):
     def load_network(self, load_path):
         for name in self.model_names:
             if isinstance(name+'_Net', str):
-                net = getattr(self, name)
+                net = getattr(self, name+'_Net')
                 if isinstance(net, torch.nn.DataParallel):
                     net = net.module
                 print('loading the model from %s' % load_path)

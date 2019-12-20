@@ -1,5 +1,6 @@
 import os
 import torch
+import sys
 import torch.nn as nn
 from model.layers import *
 from model.feature_extractor import get_models
@@ -19,8 +20,8 @@ class SARPN(BaseNet):
         rpd_num_features = 1280
         block_channel = [128, 256, 512,1024,2048]
         top_num_features = block_channel[-1]
-        self.residual_pyramid_decoder = Decoder(rpd_num_features)
-        self.adaptive_dense_feature_fusion = Encoder(block_channel, adff_num_features, rpd_num_features)
+        self.residual_pyramid_decoder = ASPP_Decoder(rpd_num_features)
+        self.adaptive_dense_feature_fusion = ASPP_Encoder(block_channel, adff_num_features, rpd_num_features)
 
     def forward(self, x):
         feature_pyramid = self.feature_extraction(x)
@@ -46,7 +47,22 @@ class Depth_SARPN(BaseModel):
                 )
 		self.model_names = ['SARPN']
 		self.losses = AverageMeter()
+		self.temp_losses = AverageMeter()
 		self.batch_time = AverageMeter()
+		self.best_loss = sys.maxsize
+		# Test metric
+		self.totalNumber = 0
+
+		self.Ae = 0
+		self.Pe = 0
+		self.Re = 0
+		self.Fe = 0
+
+		self.errorSum = {'MSE': 0, 'RMSE': 0, 'ABS_REL': 0, 'LG10': 0,
+		            'MAE': 0,  'DELTA1': 0, 'DELTA2': 0, 'DELTA3': 0}
+
+
+
 
 	def initVariables(self):
 
@@ -55,6 +71,7 @@ class Depth_SARPN(BaseModel):
 
 
 	def forward_SARPN(self):
+		self.pred_depth = self.SARPN_Net(self.image)
 		gt_depth = adjust_gt(self.depth, self.pred_depth)
 		self.loss = total_loss(self.pred_depth, gt_depth)
 		
@@ -65,7 +82,6 @@ class Depth_SARPN(BaseModel):
 	def optimize_parameters(self):
 		self.end = time.time()
 		self.initVariables()
-		self.pred_depth = self.SARPN_Net(self.image)
 		self.optimizer.zero_grad()
 		self.forward_SARPN()
 		self.losses.update(self.loss.item(), self.image.size(0))
@@ -81,10 +97,84 @@ class Depth_SARPN(BaseModel):
 	    for param_group in self.optimizer.param_groups:
 	        return param_group['lr']
 
-	def print_loss(self,epoch,batch_idx,loader):
-		print(('Epoch: [{0}][{1}/{2}]\t'
-		            'Time {batch_time.val:.3f} ({batch_time.sum:.3f})\t'
-		            'Loss {loss.val:.4f} ({loss.avg:.4f})'
-		        .format(epoch, batch_idx, len(loader), batch_time=self.batch_time, loss=self.losses)))
+	def evaluate(self):
+		self.start = time.time()
+		self.initVariables()
+		with torch.no_grad():
+			self.forward_test()
 
+
+	def print_loss(self,epoch,batch_idx,loader,mode="train"):
+		if mode=='train':
+			print(('Mode {mode} : Epoch: [{0}][{1}/{2}]\t'
+			            'Time {batch_time.val:.3f} ({batch_time.sum:.3f})\t'
+			            'Loss {loss.val:.4f} ({loss.avg:.4f})'
+			        .format(epoch, batch_idx, len(loader), batch_time=self.batch_time, loss=self.losses,mode=mode)))
+		else:
+			print(('Mode {mode} : Epoch: [{0}][{1}/{2}]\t'
+			            'Time {batch_time.val:.3f} ({batch_time.sum:.3f})\t'
+			            'Loss {loss.val:.4f} ({loss.avg:.4f})'
+			        .format(epoch, batch_idx, len(loader), batch_time=self.batch_time, loss=self.temp_losses,mode=mode)))
+
+	def forward_test(self):
+		start = time.time()
+		self.pred_depth = self.SARPN_Net(self.image)
+		end = time.time()
+		running_time = end - start
+		output = torch.nn.functional.interpolate(self.pred_depth[0], size=[self.depth.size(2), self.depth.size(3)], mode='bilinear', align_corners=True)
+
+		depth_edge = edge_detection(self.depth)
+		output_edge = edge_detection(output)
+		batchSize = self.depth.size(0)
+		self.totalNumber = self.totalNumber + batchSize
+		errors = evaluateError(output, self.depth)
+		self.errorSum = addErrors(self.errorSum, errors, batchSize)
+		self.averageError = averageErrors(self.errorSum, self.totalNumber)
+
+		edge1_valid = (depth_edge > 1)
+		edge2_valid = (output_edge > 1)
+
+		nvalid = np.sum(torch.eq(edge1_valid, edge2_valid).float().data.cpu().numpy())
+		A = nvalid / (self.depth.size(2)*self.depth.size(3))
+
+		nvalid2 = np.sum(((edge1_valid + edge2_valid) ==2).float().data.cpu().numpy())
+		P = nvalid2 / (np.sum(edge2_valid.data.cpu().numpy()))
+		R = nvalid2 / (np.sum(edge1_valid.data.cpu().numpy()))
+
+		F = (2 * P * R) / (P + R)
+
+		self.Ae += A
+		self.Pe += P
+		self.Re += R
+		self.Fe += F
+
+	def print_test(self):
+		Av = self.Ae / self.totalNumber
+		Pv = self.Pe / self.totalNumber
+		Rv = self.Re / self.totalNumber
+		Fv = self.Fe / self.totalNumber
+		print('PV', Pv)
+		print('RV', Rv)
+		print('FV', Fv)
+
+		self.averageError['RMSE'] = np.sqrt(self.averageError['MSE'])
+		print(self.averageError)
+		self.totalNumber = 0
+
+		self.Ae = 0
+		self.Pe = 0
+		self.Re = 0
+		self.Fe = 0
+
+		self.errorSum = {'MSE': 0, 'RMSE': 0, 'ABS_REL': 0, 'LG10': 0,
+		            'MAE': 0,  'DELTA1': 0, 'DELTA2': 0, 'DELTA3': 0}
+		self.averageError = None
+
+
+
+
+
+
+if __name__ == '__main__':
+	train()
 
