@@ -23,9 +23,9 @@ class SARPN(BaseNet):
         self.residual_pyramid_decoder = ASPP_Decoder(rpd_num_features)
         self.adaptive_dense_feature_fusion = ASPP_Encoder(block_channel, adff_num_features, rpd_num_features)
 
-    def forward(self, x):
+    def forward(self, x, y):
         feature_pyramid = self.feature_extraction(x)
-        fused_feature_pyramid = self.adaptive_dense_feature_fusion(feature_pyramid)
+        fused_feature_pyramid = self.adaptive_dense_feature_fusion(feature_pyramid,y)
         multiscale_depth = self.residual_pyramid_decoder(fused_feature_pyramid)
 
         return multiscale_depth
@@ -66,12 +66,12 @@ class Depth_SARPN(BaseModel):
 
 	def initVariables(self):
 
-		self.image, self.depth = self.input['image'], self.input['depth']
-		self.image, self.depth = self.image.cuda(), self.depth.cuda()  
+		self.image, self.depth, self.edge = self.input['image'], self.input['depth'], self.input['edge']
+		self.image, self.depth, self.edge = self.image.cuda(), self.depth.cuda(), self.edge.cuda()  
 
 
 	def forward_SARPN(self):
-		self.pred_depth = self.SARPN_Net(self.image)
+		self.pred_depth = self.SARPN_Net(self.image, self.edge)
 		gt_depth = adjust_gt(self.depth, self.pred_depth)
 		self.loss = total_loss(self.pred_depth, gt_depth)
 		

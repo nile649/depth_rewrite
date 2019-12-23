@@ -18,7 +18,7 @@ TrainImgLoader = data_loader.getTrainingData_NYUDV2(args.batch_size, args.root_p
 depth_model = Depth_SARPN(args)
 
 # Evaluate
-TestImgLoader = data_loader.getTestingData_NYUDV2(1, args.root_path+args.trainlist_path, args.root_path+'/data/')
+# TestImgLoader = data_loader.getTestingData_NYUDV2(1, args.root_path+args.trainlist_path, args.root_path+'/data/')
 
 
 def train():
@@ -30,13 +30,16 @@ def train():
 			depth_model.optimize_parameters()
 
 		depth_model.print_loss(args.epochs,epoch,TrainImgLoader,mode)
-		evaluate(epoch)
-
-def evaluate(epoch):
-	for idx, sample in enumerate(TestImgLoader):
-	        depth_model.setInput(sample)
-	        depth_model.evaluate()
-	depth_model.print_test()
+		if (epoch+1)%args.save_itr ==0:
+			depth_model.save_network(epoch)
+			# depth_model.save_checkpoint(epoch)
+		# evaluate(epoch)
+# 
+# def evaluate(epoch):
+# 	for idx, sample in enumerate(TestImgLoader):
+# 	        depth_model.setInput(sample)
+# 	        depth_model.evaluate()
+# 	depth_model.print_test()
 
 
 

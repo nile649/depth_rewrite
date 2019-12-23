@@ -213,18 +213,22 @@ class ASPP_Encoder(nn.Module):
         self.conv_scale1 = nn.Conv2d(sum_, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False)        # 80/64
         self.bn_scale1 = nn.BatchNorm2d(rpd_num_features)
     
-        self.aspp = ASPP(160,160)
-    def forward(self, feature_pyramid):
+        self.aspp1 = ASPP(block_channel[2],160)
+        self.concat = ConcatBlock()
+        self.aspp2 = ASPP(224,160)
+    def forward(self, feature_pyramid,edge):
 
-        scale3_size = [feature_pyramid[2].size(2), feature_pyramid[2].size(3)]
+        # scale3_size = [feature_pyramid[2].size(2), feature_pyramid[2].size(3)]
           
-        scale_3to3 = self.upsample_scale3to3(feature_pyramid[2], scale3_size)
+        # scale_3to3 = self.upsample_scale3to3(feature_pyramid[2], scale3_size)
        
-        scale3_mff = F.relu(self.bn_scale3(self.conv_scale3(scale_3to3)))                        
+        # scale3_mff = F.relu(self.bn_scale3(self.conv_scale3(scale_3to3)))                        
 
-        fused_feature_pyramid = [self.aspp(scale3_mff)]
+        fused_feature_pyramid = self.aspp1(feature_pyramid[2])
+        concat_fused_feature_pyramid = self.concat(fused_feature_pyramid,edge)
+        fused_feature_pyramid = [self.aspp2(concat_fused_feature_pyramid)]
 
-        return fused_feature_pyramid        
+        return fused_feature_pyramid         
     
 
 class ASPP_Decoder(nn.Module):
@@ -545,5 +549,62 @@ class Encoder(nn.Module):
 
         fused_feature_pyramid = [scale1_mff, scale2_mff, scale3_mff, scale4_mff, scale5_mff]
 
-        return fused_feature_pyramid        
+        return fused_feature_pyramid    
+
     
+class ConvBlock(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(ConvBlock, self).__init__()
+
+        conv_block = [  nn.ReflectionPad2d(1),
+                        nn.Conv2d(in_features, in_features, 3),
+                        nn.InstanceNorm2d(in_features),
+                        nn.ReLU(inplace=True),
+                        nn.ReflectionPad2d(1),
+                        nn.Conv2d(in_features, out_features, 3),
+                        nn.InstanceNorm2d(out_features)  ]
+
+        self.conv_block = nn.Sequential(*conv_block)
+
+    def forward(self, x):
+        return self.conv_block(x)
+
+
+class ConcatBlock(nn.Module):
+
+    def __init__(self, input_nc=1, in_features=160, out_features=224):
+        super(ConcatBlock, self).__init__()
+        self.channels = in_features
+
+        self.convblock = ConvBlock(in_features + in_features, out_features)
+        self.up_conv = nn.Conv2d(in_features * 2, in_features, 3, 1, 1)
+        self.down_conv = nn.Sequential(
+            nn.Conv2d(64, in_features // 4, 3, 1, 1),
+            nn.ReLU(),
+            nn.Conv2d(in_features // 4, in_features // 2, 1, 1),
+            nn.ReLU(),
+            nn.Conv2d(in_features // 2, in_features, 1, 1),
+            nn.ReLU()
+        )
+        # self.noise = NoiseInjection(in_features)
+
+        self.convblock_ = ConvBlock(in_features + 64, out_features)
+
+        self.vgg_block = nn.Sequential(
+            nn.Conv2d(input_nc, 16, 3, 1, 1),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, 1, 1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 1, 1),
+            nn.ReLU()
+        )
+
+    def forward(self, x, edge=None):
+        
+            edge = F.upsample(edge, size=(x.shape[2], x.shape[2]), mode='bilinear')
+
+            edge = self.vgg_block(edge)
+            concat = torch.cat([x, edge], 1)
+
+            out = (self.convblock_(concat))
+            return out

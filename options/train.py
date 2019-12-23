@@ -21,6 +21,6 @@ def _get_train_opt():
     parser.add_argument('--optimizer', default="adam", type=str, help="Optimizer selection")
     parser.add_argument('--root_path', help="the root path of dataset")
 
-    parser.add_argument('--save_itr',type=int,default=1, help="iteration number after which to save")
+    parser.add_argument('--save_itr',type=int,default=5, help="iteration number after which to save")
     return parser.parse_args()
 
