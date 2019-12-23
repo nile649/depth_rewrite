@@ -38,7 +38,7 @@ class RandomRotate(object):
         self.order = order
 
     def __call__(self, sample):
-        image, depth = sample['image'], sample['depth']
+        image, depth, edge = sample['image'], sample['depth'], sample['edge']
 
         applied_angle = random.uniform(-self.angle, self.angle)
         angle1 = applied_angle
@@ -48,16 +48,17 @@ class RandomRotate(object):
             image, angle1, reshape=self.reshape, order=self.order)
         depth = ndimage.interpolation.rotate(
             depth, angle1, reshape=self.reshape, order=self.order)
-
+        edge = ndimage.interpolation.rotate(
+            edge, angle1, reshape=self.reshape, order=self.order)
         image = Image.fromarray(image)
         depth = Image.fromarray(depth)
-
-        return {'image': image, 'depth': depth}
+        edge = Image.fromarray(edge)
+        return {'image': image, 'depth': depth, 'edge':edge}
 
 class RandomHorizontalFlip(object):
 
     def __call__(self, sample):
-        image, depth = sample['image'], sample['depth']
+        image, depth, edge = sample['image'], sample['depth'],sample['edge']
 
         if not _is_pil_image(image):
             raise TypeError(
@@ -65,12 +66,17 @@ class RandomHorizontalFlip(object):
         if not _is_pil_image(depth):
             raise TypeError(
                 'img should be PIL Image. Got {}'.format(type(depth)))
+        if not _is_pil_image(edge):
+            raise TypeError(
+                'img should be PIL Image. Got {}'.format(type(edge)))
+
 
         if random.random() < 0.5:
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
             depth = depth.transpose(Image.FLIP_LEFT_RIGHT)
+            edge = edge.transpose(Image.FLIP_LEFT_RIGHT)
 
-        return {'image': image, 'depth': depth}
+        return {'image': image, 'depth': depth, 'edge':edge}
 
 
 class Scale(object):
@@ -86,12 +92,13 @@ class Scale(object):
         self.size = size
 
     def __call__(self, sample):
-        image, depth = sample['image'], sample['depth']
+        image, depth, edge = sample['image'], sample['depth'], sample['edge']
 
         image = self.changeScale(image, self.size)
         depth = self.changeScale(depth, self.size,Image.NEAREST)
+        edge = self.changeScale(edge, self.size,Image.NEAREST)
  
-        return {'image': image, 'depth': depth}
+        return {'image': image, 'depth': depth, 'edge':edge}
 
     def changeScale(self, img, size, interpolation=Image.BILINEAR):
 
@@ -118,20 +125,24 @@ class Scale(object):
 
 
 class CenterCrop(object):
-    def __init__(self, size_image, size_depth):
+    def __init__(self, size_image, size_depth,size_edge):
         self.size_image = size_image
         self.size_depth = size_depth
+        self.size_edge = size_edge
 
     def __call__(self, sample):
-        image, depth = sample['image'], sample['depth']  
+        image, depth, edge = sample['image'], sample['depth'],sample['edge']   
         ### crop image and depth to (304, 228)
         image = self.centerCrop(image, self.size_image)
         depth = self.centerCrop(depth, self.size_image)
+        edge = self.centerCrop(edge, self.size_image)
         ### resize depth to (152, 114) downsample 2
         ow, oh = self.size_depth
         depth = depth.resize((ow, oh))
+        ow, oh = self.size_edge
+        edge = edge.resize((ow, oh))
 
-        return {'image': image, 'depth': depth}
+        return {'image': image, 'depth': depth, 'edge':edge}
 
     def centerCrop(self, image, size):
 
@@ -160,7 +171,7 @@ class ToTensor(object):
         self.is_test = is_test
 
     def __call__(self, sample):
-        image, depth = sample['image'], sample['depth']
+        image, depth, edge = sample['image'], sample['depth'],sample['edge']   
         """
         Args:
             pic (PIL.Image or numpy.ndarray): Image to be converted to tensor.
@@ -169,11 +180,12 @@ class ToTensor(object):
         """
         # ground truth depth of training samples is stored in 8-bit while test samples are saved in 16 bit
         image = self.to_tensor(image)
+        edge = self.to_tensor(edge)
         if self.is_test:
             depth = self.to_tensor(depth).float()/1000
         else:            
             depth = self.to_tensor(depth).float()*10
-        return {'image': image, 'depth': depth}
+        return {'image': image, 'depth': depth, 'edge':edge}
 
     def to_tensor(self, pic):
         if not(_is_pil_image(pic) or _is_numpy_image(pic)):
@@ -224,7 +236,7 @@ class Lighting(object):
         self.eigvec = eigvec
 
     def __call__(self, sample):
-        image, depth = sample['image'], sample['depth']
+        image, depth,edge = sample['image'], sample['depth'],sample['edge']
         if self.alphastd == 0:
             return image
 
@@ -236,7 +248,7 @@ class Lighting(object):
 
         image = image.add(rgb.view(3, 1, 1).expand_as(image))
 
-        return {'image': image, 'depth': depth}
+        return {'image': image, 'depth': depth, 'edge':edge}
 
 
 class Grayscale(object):
@@ -292,15 +304,15 @@ class RandomOrder(object):
         self.transforms = transforms
 
     def __call__(self, sample):
-        image, depth = sample['image'], sample['depth']
+        image, depth, edge = sample['image'], sample['depth'],sample['edge']
 
         if self.transforms is None:
-            return {'image': image, 'depth': depth}
+            return {'image': image, 'depth': depth,'edge':edge}
         order = torch.randperm(len(self.transforms))
         for i in order:
             image = self.transforms[i](image)
 
-        return {'image': image, 'depth': depth}
+        return {'image': image, 'depth': depth, 'edge':edge}
 
 
 class ColorJitter(RandomOrder):
@@ -327,11 +339,11 @@ class Normalize(object):
         Returns:
             Tensor: Normalized image.
         """
-        image, depth = sample['image'], sample['depth']
+        image, depth, edge = sample['image'], sample['depth'], sample['edge']
 
         image = self.normalize(image, self.mean, self.std)
 
-        return {'image': image, 'depth': depth}
+        return {'image': image, 'depth': depth, 'edge':edge}
 
     def normalize(self, tensor, mean, std):
         """Normalize a tensor image with mean and standard deviation.

@@ -19,11 +19,12 @@ class NYUDV2Dataset(Dataset):
         image_name = self.frame.ix[idx, 0]
         depth_name = self.frame.ix[idx, 1]
         root_path = self.root_path
-
+        s_path = root_path+depth_name
         image = Image.open(root_path+image_name)
         depth = Image.open(root_path+depth_name)
+        edge = Image.open(s_path[:-len(s_path.split('/')[-1])]+'hed_'+s_path.split('/')[-1])
 
-        sample = {'image': image, 'depth': depth}
+        sample = {'image': image, 'depth': depth, 'edge':edge}
 
         if self.transform:
             sample = self.transform(sample)
@@ -52,7 +53,7 @@ def getTrainingData_NYUDV2(batch_size, trainlist_path, root_path):
                                             Scale(256),
                                             RandomHorizontalFlip(),
                                             RandomRotate(5),
-                                            CenterCrop([256, 256], [256, 256]),
+                                            CenterCrop([256, 256], [256, 256],[256, 256]),
                                             ToTensor(),
                                             Lighting(0.1, __imagenet_pca[
                                                 'eigval'], __imagenet_pca['eigvec']),
