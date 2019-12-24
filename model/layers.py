@@ -608,3 +608,190 @@ class ConcatBlock(nn.Module):
 
             out = (self.convblock_(concat))
             return out
+
+
+
+# Wasp Module - Bruno Artacho : Email : bmartacho@mail.rit.edu 
+class _AtrousModule(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, padding, dilation, BatchNorm):
+        super(_AtrousModule, self).__init__()
+        self.atrous_conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size,
+                                            stride=1, padding=padding, dilation=dilation, bias=False)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU()
+
+        self._init_weight()
+
+    def forward(self, x):
+        x = self.atrous_conv(x)
+        x = self.bn(x)
+
+        return self.relu(x)
+
+    def _init_weight(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                torch.nn.init.kaiming_normal_(m.weight)
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+
+
+# Residual Pyramid Decoder
+class WASP(nn.Module):
+    def __init__(self, in_channels):
+        super(WASP, self).__init__()
+        # inplanes = top_num_features
+        dilations = [24, 18, 12,  6]
+
+        self.wasp1 = _AtrousModule(in_channels, 256, 1, padding=0, dilation=dilations[0], BatchNorm=nn.BatchNorm2d)
+        self.wasp2 = _AtrousModule(256, 256, 3, padding=dilations[1], dilation=dilations[1], BatchNorm=nn.BatchNorm2d)
+        self.wasp3 = _AtrousModule(256, 256, 3, padding=dilations[2], dilation=dilations[2], BatchNorm=nn.BatchNorm2d)
+        self.wasp4 = _AtrousModule(256, 256, 3, padding=dilations[3], dilation=dilations[3], BatchNorm=nn.BatchNorm2d)
+
+        self.global_avg_pool = nn.Sequential(nn.Conv2d(in_channels, 256, 1, stride=1, bias=False),
+                                             nn.BatchNorm2d(256),
+                                             nn.ReLU())
+
+        self.conv1   = nn.Conv2d(1280, 256, 1, bias=False)
+        self.conv2   = nn.Conv2d(256,256,1,bias=False)
+        self.bn1     = nn.BatchNorm2d(256)
+        self.relu    = nn.ReLU()
+        self.dropout = nn.Dropout(0.5)
+        # self._init_weight()
+
+
+    def forward(self, x):
+        x1 = self.wasp1(x)
+        x2 = self.wasp2(x1)
+        x3 = self.wasp3(x2)
+        x4 = self.wasp4(x3)
+
+        x1 = self.conv2(x1)
+        x2 = self.conv2(x2)
+        x3 = self.conv2(x3)
+        x4 = self.conv2(x4)
+        
+        x1 = self.conv2(x1)
+        x2 = self.conv2(x2)
+        x3 = self.conv2(x3)
+        x4 = self.conv2(x4)
+
+        x5 = self.global_avg_pool(x)
+        x5 = F.interpolate(x5, size=x4.size()[2:], mode='bilinear', align_corners=True)
+        x = torch.cat((x1, x2, x3, x4, x5), dim=1)
+
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        return self.dropout(x)
+
+
+
+
+
+# Residual Pyramid Decoder
+class MSW_Decoder(nn.Module):
+
+    def __init__(self, rpd_num_features = 256):
+        super(MSW_Decoder, self).__init__()
+
+        self.conv1 = nn.Sequential(nn.Conv2d(rpd_num_features, rpd_num_features//2, kernel_size=3, stride=1, padding=1, bias=False),       
+                                   nn.BatchNorm2d(rpd_num_features//2),                                                                
+                                   nn.ReLU(),
+                                   nn.Conv2d(rpd_num_features//2, rpd_num_features//4, kernel_size=3, stride=1, padding=1, bias=False),       
+                                   nn.BatchNorm2d(rpd_num_features//4),                                                                
+                                   nn.ReLU(), 
+                                   nn.Conv2d(rpd_num_features//4, rpd_num_features//8, kernel_size=3, stride=1, padding=1, bias=False),       
+                                   nn.BatchNorm2d(rpd_num_features//8),                                                                
+                                   nn.ReLU(),                                   
+                                   nn.Conv2d(rpd_num_features//8, 1, kernel_size=3, stride=1, padding=1, bias=False))                  
+
+        self.scale1 = Refineblock(num_features=rpd_num_features//8, kernel_size=3)
+
+    def forward(self,fused_feature_pyramid):
+
+        scale1_size = [fused_feature_pyramid[0].size(2), fused_feature_pyramid[0].size(3)]
+        scale2_size = [fused_feature_pyramid[1].size(2), fused_feature_pyramid[1].size(3)]
+        scale3_size = [fused_feature_pyramid[2].size(2), fused_feature_pyramid[2].size(3)]
+        scale4_size = [fused_feature_pyramid[3].size(2), fused_feature_pyramid[3].size(3)]
+        scale5_size = [fused_feature_pyramid[4].size(2), fused_feature_pyramid[4].size(3)]
+        
+
+        # scale5
+        scale5_depth = self.scale1(self.conv1(fused_feature_pyramid[4]))
+
+        # scale4
+        scale4_res = self.conv1(fused_feature_pyramid[3])
+        scale5_upx2 = F.interpolate(scale5_depth, size=scale4_size,
+                                    mode='bilinear', align_corners=True)
+        scale4_depth = self.scale1(scale4_res + scale5_upx2)
+
+        # scale3 
+        scale3_res = self.conv1(fused_feature_pyramid[2])
+        scale4_upx2 = F.interpolate(scale4_depth, size=scale3_size,
+                                    mode='bilinear', align_corners=True)
+        scale3_depth = self.scale1(scale3_res + scale4_upx2)
+
+        # scale2
+        scale2_res = self.conv1(fused_feature_pyramid[1])
+        scale3_upx2 = F.interpolate(scale3_depth, size=scale2_size,
+                                    mode='bilinear', align_corners=True)
+        scale2_depth = self.scale1(scale2_res + scale3_upx2)
+
+        # scale1
+        scale1_res = self.conv1(fused_feature_pyramid[0])
+        scale2_upx2 = F.interpolate(scale2_depth, size=scale1_size,
+                                    mode='bilinear', align_corners=True)
+        scale1_depth = self.scale1(scale1_res + scale2_upx2)
+
+        scale_depth = [scale5_depth, scale4_depth, scale3_depth, scale2_depth, scale1_depth]
+
+        return scale_depth
+
+
+
+
+class MSW_Encoder(nn.Module):
+    def __init__(self,block_channel):
+        super(MSW_Encoder, self).__init__()
+
+        self.wasp0   = WASP(128)  
+        self.wasp1   = WASP(256)
+        self.wasp2   = WASP(512)
+        self.wasp3   = WASP(1024)
+        self.wasp4   = WASP(2048)
+        self.concat0 = ConcatBlock(1,256,320)
+        self.waspy   = WASP(320)
+
+    def forward(self, feature_pyramid, y):
+        # pdb.set_trace()
+################# 256 is o/p of wasp0 ###################
+        x0 = self.wasp0(feature_pyramid[0])
+        x1 = self.wasp1(feature_pyramid[1])
+        x2 = self.wasp2(feature_pyramid[2])
+        x3 = self.wasp3(feature_pyramid[3])
+        x4 = self.wasp4(feature_pyramid[4])
+
+################# 320 is o/p of wasp0 ###################
+        c0 = self.concat0(x0,y)
+        c1 = self.concat0(x1,y)
+        c2 = self.concat0(x2,y)
+        c3 = self.concat0(x3,y)
+        c4 = self.concat0(x4,y)
+
+################# 256 is o/p of wasp0 ###################
+        y0 = self.waspy(c0)
+        y1 = self.waspy(c1)
+        y2 = self.waspy(c2)
+        y3 = self.waspy(c3)
+        y4 = self.waspy(c4)
+
+
+        fused_feature_pyramid = [y0, y1, y2, y3, y4]
+
+        return fused_feature_pyramid    

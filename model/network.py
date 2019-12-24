@@ -12,23 +12,38 @@ import pdb
 import time
 
 
-class SARPN(BaseNet):
-    def __init__(self,net):
-        super(SARPN, self).__init__()
-        self.feature_extraction = net
-        adff_num_features = 1280
-        rpd_num_features = 1280
-        block_channel = [128, 256, 512,1024,2048]
-        top_num_features = block_channel[-1]
-        self.residual_pyramid_decoder = ASPP_Decoder(rpd_num_features)
-        self.adaptive_dense_feature_fusion = ASPP_Encoder(block_channel, adff_num_features, rpd_num_features)
+# class SARPN(BaseNet): # Previously Used SARPN name
+#     def __init__(self,net):
+#         super(SARPN, self).__init__()
+#         self.feature_extraction = net
+#         adff_num_features = 1280
+#         rpd_num_features = 1280
+#         block_channel = [128, 256, 512,1024,2048]
+#         top_num_features = block_channel[-1]
+#         self.residual_pyramid_decoder = ASPP_Decoder(rpd_num_features)
+#         self.adaptive_dense_feature_fusion = ASPP_Encoder(block_channel, adff_num_features, rpd_num_features)
 
-    def forward(self, x, y):
-        feature_pyramid = self.feature_extraction(x)
-        fused_feature_pyramid = self.adaptive_dense_feature_fusion(feature_pyramid,y)
-        multiscale_depth = self.residual_pyramid_decoder(fused_feature_pyramid)
+#     def forward(self, x, y):
+#         feature_pyramid = self.feature_extraction(x)
+#         fused_feature_pyramid = self.adaptive_dense_feature_fusion(feature_pyramid,y)
+#         multiscale_depth = self.residual_pyramid_decoder(fused_feature_pyramid)
 
-        return multiscale_depth
+#         return multiscale_depth
+
+class SARPN(BaseNet): # Previously Used SARPN name
+	def __init__(self,net):
+	    super(SARPN, self).__init__()
+	    self.feature_extraction = net
+	    block_channel = [128, 256, 512,1024,2048]
+	    self.residual_pyramid_decoder = MSW_Decoder()
+	    self.adaptive_dense_feature_fusion = MSW_Encoder(block_channel)
+
+	def forward(self, x, y):
+		# pdb.set_trace()
+		feature_pyramid = self.feature_extraction(x)
+		fused_feature_pyramid = self.adaptive_dense_feature_fusion(feature_pyramid,y)
+		multiscale_depth = self.residual_pyramid_decoder(fused_feature_pyramid)
+		return multiscale_depth
 
 
 class Depth_SARPN(BaseModel):
@@ -118,7 +133,7 @@ class Depth_SARPN(BaseModel):
 
 	def forward_test(self):
 		start = time.time()
-		self.pred_depth = self.SARPN_Net(self.image)
+		self.pred_depth = self.SARPN_Net(self.image, self.edge)
 		end = time.time()
 		running_time = end - start
 		output = torch.nn.functional.interpolate(self.pred_depth[0], size=[self.depth.size(2), self.depth.size(3)], mode='bilinear', align_corners=True)
