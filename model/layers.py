@@ -144,75 +144,10 @@ class SelfAttentionBlock_(PixelAttentionBlock_):
 
 
 
-# class ACN_Encoder(nn.Module):
-#     def __init__(self, block_channel, adff_num_features=1280, rpd_num_features=1280):
-#         super(ACN_Encoder, self).__init__()
+class ACN_Encoder(nn.Module):
+    def __init__(self, block_channel):
+        super(ACN_Encoder, self).__init__()
 
-
-
-
-
-# ASPP Module
-
-
-class ASPP_Encoder(nn.Module):
-
-    def __init__(self, block_channel, adff_num_features=1280, rpd_num_features=1280):
-        super(ASPP_Encoder, self).__init__()
-
-        rpd_num_features = rpd_num_features // 2  # 640
-        print("block_channel:", block_channel)
-        # 2048 -> 256
-        self.upsample_scale5to5 = _UpProjection(num_input_features=block_channel[4], num_output_features=adff_num_features//5)
-        sum_ = adff_num_features//5
-        # 256 -> 1024
-        self.conv_scale5 = nn.Conv2d(sum_, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False)       # 1280/1024
-        self.bn_scale5 = nn.BatchNorm2d(rpd_num_features)
-
-        adff_num_features = adff_num_features // 2     # 640           
-        rpd_num_features = rpd_num_features // 2   # 
-
-
-        # scale4
- 
-        self.upsample_scale4to4 = _UpProjection(num_input_features=block_channel[3], num_output_features=adff_num_features//5) 
-        
-        sum_ = adff_num_features//5
-        self.conv_scale4 = nn.Conv2d(sum_, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False)       # 640/512
-        self.bn_scale4 = nn.BatchNorm2d(rpd_num_features) 
-
-        adff_num_features = adff_num_features // 2   # 320              
-        rpd_num_features = rpd_num_features // 2     # 
-
-        # scale3
-        
-        self.upsample_scale3to3 = _UpProjection(num_input_features=block_channel[2], num_output_features=adff_num_features//5)  
-        
-        sum_ = adff_num_features//5  
-        self.conv_scale3 = nn.Conv2d(sum_, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False)       # 320/256
-        self.bn_scale3 = nn.BatchNorm2d(rpd_num_features)
-
-        adff_num_features = adff_num_features // 2     # 160             
-        rpd_num_features = rpd_num_features // 2        
-
-        # scale2
-        
-        self.upsample_scale2to2 = _UpProjection(num_input_features=block_channel[1], num_output_features=adff_num_features//5)  
-         
-        sum_ = adff_num_features//5   
-        self.conv_scale2 = nn.Conv2d(sum_, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False)        # 160/128
-        self.bn_scale2 = nn.BatchNorm2d(rpd_num_features)
-
-        adff_num_features = adff_num_features // 2   # 80               
-        rpd_num_features = rpd_num_features // 2     
-
-        #scale1   
-        self.upsample_scale1to1 = _UpProjection(num_input_features=block_channel[0], num_output_features=adff_num_features//5)  
-     
-        sum_ = adff_num_features//5 
-        self.conv_scale1 = nn.Conv2d(sum_, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False)        # 80/64
-        self.bn_scale1 = nn.BatchNorm2d(rpd_num_features)
-    
         self.aspp1 = ASPP(block_channel[2],160)
         self.concat = ConcatBlock()
         self.aspp2 = ASPP(224,160)
@@ -228,76 +163,77 @@ class ASPP_Encoder(nn.Module):
         concat_fused_feature_pyramid = self.concat(fused_feature_pyramid,edge)
         fused_feature_pyramid = [self.aspp2(concat_fused_feature_pyramid)]
 
+        return fused_feature_pyramid     
+
+
+
+
+# ASPP Module
+
+
+class ASPP_Encoder(nn.Module):
+
+    def __init__(self,block_channel):
+        super(ASPP_Encoder, self).__init__()
+
+        self.aspp1 = ASPP(block_channel[2],256)
+        self.concat = ConcatBlock()
+        self.aspp2 = ASPP(256,256)
+    def forward(self, feature_pyramid,edge):                      
+
+        fused_feature_pyramid = self.aspp1(feature_pyramid[2])
+        # concat_fused_feature_pyramid = self.concat(fused_feature_pyramid)#,edge)
+        fused_feature_pyramid = [self.aspp2(fused_feature_pyramid)+ fused_feature_pyramid]
+
         return fused_feature_pyramid         
     
 
 class ASPP_Decoder(nn.Module):
 
-    def __init__(self, rpd_num_features = 2048):
-        super(ASPP_Decoder, self).__init__()
+    def __init__(self, rpd_num_features = 256):
+        super(ASPP_Decoder, self).__init__()                                                              
+        self.conv = nn.Sequential(nn.Conv2d(rpd_num_features, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False),       
+                                           nn.BatchNorm2d(rpd_num_features),                                                                
+                                           nn.ReLU(),                                                                                   
+                                           nn.Conv2d(rpd_num_features, 1, kernel_size=3, stride=1, padding=1, bias=False))                  
+         
+        self.scale = Refineblock(num_features=rpd_num_features, kernel_size=3)                                                     
 
-
-        self.conv = nn.Conv2d(rpd_num_features // 2, rpd_num_features // 2, kernel_size=1, stride=1, bias=False)                                               
-        self.bn = nn.BatchNorm2d(rpd_num_features//2)                                                    
-
-        self.conv5 = nn.Sequential(nn.Conv2d(rpd_num_features, rpd_num_features//2, kernel_size=3, stride=1, padding=1, bias=False),    
-                                   nn.BatchNorm2d(rpd_num_features//2),                                                             
-                                   nn.ReLU(),                                                                                   
-                                   nn.Conv2d(rpd_num_features//2, 1, kernel_size=3, stride=1, padding=1, bias=False))               
-        rpd_num_features = rpd_num_features // 2                                                                                              
-        self.scale5 = Refineblock(num_features=rpd_num_features, kernel_size=3)                                                     
-
-        rpd_num_features = rpd_num_features // 2        
-
-        self.conv4 = nn.Sequential(nn.Conv2d(rpd_num_features, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False),       
-                                   nn.BatchNorm2d(rpd_num_features),                                                                
-                                   nn.ReLU(),                                                                                   
-                                   nn.Conv2d(rpd_num_features, 1, kernel_size=3, stride=1, padding=1, bias=False))                  
-
-        self.scale4 = Refineblock(num_features=rpd_num_features, kernel_size=3)                                                     
-
-        rpd_num_features = rpd_num_features // 2                                                                                        
-        
-
-        self.conv3 = nn.Sequential(nn.Conv2d(rpd_num_features, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False),       
-                                   nn.BatchNorm2d(rpd_num_features),
-                                   nn.ReLU(),
-                                   nn.Conv2d(rpd_num_features, 1, kernel_size=3, stride=1, padding=1, bias=False))                  
-
-        self.scale3 = Refineblock(num_features=rpd_num_features, kernel_size=3)                                                     
-
-        rpd_num_features = rpd_num_features // 2                                                                                        
-
-        self.conv2 = nn.Sequential(nn.Conv2d(rpd_num_features, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False),
-                                   nn.BatchNorm2d(rpd_num_features),
-                                   nn.ReLU(),
-                                   nn.Conv2d(rpd_num_features, 1, kernel_size=3, stride=1, padding=1, bias=False))
-        self.scale2 = Refineblock(num_features=rpd_num_features, kernel_size=3)                                                     
-
-        rpd_num_features = rpd_num_features // 2                                                                                        
-
-        self.conv1 = nn.Sequential(nn.Conv2d(rpd_num_features, rpd_num_features, kernel_size=3, stride=1, padding=1, bias=False),       
-                                   nn.BatchNorm2d(rpd_num_features),                                                                
-                                   nn.ReLU(),
-                                   nn.Conv2d(rpd_num_features, 1, kernel_size=3, stride=1, padding=1, bias=False))                  
-
-        self.scale1 = Refineblock(num_features=rpd_num_features, kernel_size=3)
     def forward(self,fused_feature_pyramid):
         # pdb.set_trace()
         scale3_size = [fused_feature_pyramid[0].size(2), fused_feature_pyramid[0].size(3)]
+        scale2_size = [2*fused_feature_pyramid[0].size(2), 2*fused_feature_pyramid[0].size(3)]
+        scale1_size = [4*fused_feature_pyramid[0].size(2), 4*fused_feature_pyramid[0].size(3)]
 
-        scale3_res = self.conv3(fused_feature_pyramid[0])
+        scale3_depth = self.scale(self.conv(fused_feature_pyramid[0]))
         
-        scale3_depth = self.scale3(scale3_res)
+        scale2 = F.interpolate(fused_feature_pyramid[0], size=scale2_size,
+                                    mode='bilinear', align_corners=True)
+        scale2_depth = self.scale(self.conv(scale2))
 
-        scale_depth = [scale3_depth]
+        scale1 = F.interpolate(fused_feature_pyramid[0], size=scale1_size,
+                                    mode='bilinear', align_corners=True)
+        scale1_depth = self.scale(self.conv(scale1))
+
+        scale_depth = [scale3_depth,scale2_depth,scale1_depth]
 
         return scale_depth
 
 
+# class ASPP_Classifier(nn.Module):
 
+#     def __init__(self, channel2=160,classes = 80):
+#         super(ASPP_Classifier, self).__init__()
 
-# SARPN
+#         self.classifier = nn.Sequential(OrderedDict([
+#             ('conv',     nn.Conv2d(channel2, 2*classes, kernel_size=1, stride=1, padding=0)),
+#             ('upsample', nn.Upsample(scale_factor=8, mode='bilinear', align_corners=True))]))
+
+#     def forward(self,fused_feature_pyramid):
+        
+
+#         return classi
+# #     # SARPN
 
 class _UpProjection(nn.Sequential):
 

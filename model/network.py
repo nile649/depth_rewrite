@@ -10,40 +10,39 @@ from model.loss import *
 from model.util import *
 import pdb
 import time
+from model.ordinal import *
 
-
-# class SARPN(BaseNet): # Previously Used SARPN name
-#     def __init__(self,net):
-#         super(SARPN, self).__init__()
-#         self.feature_extraction = net
-#         adff_num_features = 1280
-#         rpd_num_features = 1280
-#         block_channel = [128, 256, 512,1024,2048]
-#         top_num_features = block_channel[-1]
-#         self.residual_pyramid_decoder = ASPP_Decoder(rpd_num_features)
-#         self.adaptive_dense_feature_fusion = ASPP_Encoder(block_channel, adff_num_features, rpd_num_features)
-
-#     def forward(self, x, y):
-#         feature_pyramid = self.feature_extraction(x)
-#         fused_feature_pyramid = self.adaptive_dense_feature_fusion(feature_pyramid,y)
-#         multiscale_depth = self.residual_pyramid_decoder(fused_feature_pyramid)
-
-#         return multiscale_depth
 
 class SARPN(BaseNet): # Previously Used SARPN name
 	def __init__(self,net):
 	    super(SARPN, self).__init__()
 	    self.feature_extraction = net
 	    block_channel = [128, 256, 512,1024,2048]
-	    self.residual_pyramid_decoder = MSW_Decoder()
-	    self.adaptive_dense_feature_fusion = MSW_Encoder(block_channel)
+	    self.residual_pyramid_decoder = ASPP_Decoder()
+	    self.adaptive_dense_feature_fusion = ASPP_Encoder(block_channel)
 
 	def forward(self, x, y):
 		# pdb.set_trace()
 		feature_pyramid = self.feature_extraction(x)
 		fused_feature_pyramid = self.adaptive_dense_feature_fusion(feature_pyramid,y)
 		multiscale_depth = self.residual_pyramid_decoder(fused_feature_pyramid)
+
 		return multiscale_depth
+
+# class SARPN(BaseNet): # Previously Used SARPN name
+# 	def __init__(self,net):
+# 	    super(SARPN, self).__init__()
+# 	    self.feature_extraction = net
+# 	    block_channel = [128, 256, 512,1024,2048]
+# 	    self.residual_pyramid_decoder = MSW_Decoder()
+# 	    self.adaptive_dense_feature_fusion = MSW_Encoder(block_channel)
+
+# 	def forward(self, x, y):
+# 		# pdb.set_trace()
+# 		feature_pyramid = self.feature_extraction(x)
+# 		fused_feature_pyramid = self.adaptive_dense_feature_fusion(feature_pyramid,y)
+# 		multiscale_depth = self.residual_pyramid_decoder(fused_feature_pyramid)
+# 		return multiscale_depth
 
 
 class Depth_SARPN(BaseModel):
@@ -62,12 +61,13 @@ class Depth_SARPN(BaseModel):
                 )
 		self.model_names = ['SARPN']
 		self.losses = AverageMeter()
+		# self.loss = ordLoss() # ordinal loss
 		self.temp_losses = AverageMeter()
 		self.batch_time = AverageMeter()
 		self.best_loss = sys.maxsize
 		# Test metric
 		self.totalNumber = 0
-
+		self.criterion = nn.MSELoss().cuda()
 		self.Ae = 0
 		self.Pe = 0
 		self.Re = 0
@@ -88,7 +88,13 @@ class Depth_SARPN(BaseModel):
 	def forward_SARPN(self):
 		self.pred_depth = self.SARPN_Net(self.image, self.edge)
 		gt_depth = adjust_gt(self.depth, self.pred_depth)
-		self.loss = total_loss(self.pred_depth, gt_depth)
+		losses = list()
+		for j in range(len(self.pred_depth)):
+			loss_i = self.criterion(self.pred_depth[j], gt_depth[j])
+			losses.append(loss_i)
+		self.loss = sum(losses)
+		# self.loss = total_loss(self.pred_depth, gt_depth)
+		# self.loss = ordLoss()
 		
 
 	def backward_SARPN(self):
