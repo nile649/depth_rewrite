@@ -18,7 +18,7 @@ class SARPN(BaseNet): # Previously Used SARPN name
 	    super(SARPN, self).__init__()
 	    self.feature_extraction = net
 	    block_channel = [128, 256, 512,1024,2048]
-	    self.residual_pyramid_decoder = ASPP_Decoder()
+	    self.residual_pyramid_decoder = Decoder()
 	    self.adaptive_dense_feature_fusion = ASPP_Encoder(block_channel)
 
 	def forward(self, x, y):
@@ -28,22 +28,6 @@ class SARPN(BaseNet): # Previously Used SARPN name
 		multiscale_depth = self.residual_pyramid_decoder(fused_feature_pyramid)
 
 		return multiscale_depth
-
-# class SARPN(BaseNet): # Previously Used SARPN name
-# 	def __init__(self,net):
-# 	    super(SARPN, self).__init__()
-# 	    self.feature_extraction = net
-# 	    block_channel = [128, 256, 512,1024,2048]
-# 	    self.residual_pyramid_decoder = MSW_Decoder()
-# 	    self.adaptive_dense_feature_fusion = MSW_Encoder(block_channel)
-
-# 	def forward(self, x, y):
-# 		# pdb.set_trace()
-# 		feature_pyramid = self.feature_extraction(x)
-# 		fused_feature_pyramid = self.adaptive_dense_feature_fusion(feature_pyramid,y)
-# 		multiscale_depth = self.residual_pyramid_decoder(fused_feature_pyramid)
-# 		return multiscale_depth
-
 
 class Depth_SARPN(BaseModel):
 	def __init__(self,args):
@@ -67,7 +51,7 @@ class Depth_SARPN(BaseModel):
 		self.best_loss = sys.maxsize
 		# Test metric
 		self.totalNumber = 0
-		self.criterion = nn.MSELoss().cuda()
+		self.criterion = LossFunc()#nn.MSELoss().cuda()
 		self.Ae = 0
 		self.Pe = 0
 		self.Re = 0
