@@ -29,7 +29,7 @@ def train():
 			depth_model.setInput(sample)
 			depth_model.optimize_parameters()
 
-		depth_model.print_loss(args.epochs,epoch,TrainImgLoader,mode)
+			depth_model.print_loss(args.epochs,epoch,TrainImgLoader,mode)
 		if (epoch+1)%args.save_itr ==0:
 			depth_model.save_network(epoch)
 			# depth_model.save_checkpoint(epoch)
